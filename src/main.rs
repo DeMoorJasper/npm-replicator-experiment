@@ -213,10 +213,10 @@ async fn main() {
         .build()
         .unwrap();
 
-    let limit: usize = 100;
+    let limit: usize = 250;
     let mut total_rows = limit * 2;
     let mut offset: usize = limit;
-    let mut start_key: Option<Value> = Some(Value::from("@dxos/cli-core"));
+    let mut start_key: Option<Value> = Some(Value::from("@eqela/slingdev"));
 
     while offset < total_rows {
         let mut requests = Vec::new();
