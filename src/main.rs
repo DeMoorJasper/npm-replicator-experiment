@@ -1,16 +1,15 @@
 use rusqlite::{named_params, Connection, OptionalExtension};
+use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 
-use couch_rs::error::CouchResult;
 use serde::{Deserialize, Serialize};
-use tokio_stream::StreamExt;
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct DocumentPackageDist {
     tarball: String,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct DocumentPackageVersion {
     #[serde(default)]
     license: String,
@@ -21,7 +20,7 @@ pub struct DocumentPackageVersion {
     dist: DocumentPackageDist,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct RegistryDocument {
     #[serde(rename = "_id")]
     id: String,
@@ -62,10 +61,12 @@ impl MinimalPackageData {
             for (name, _version) in value.optional_dependencies {
                 dependencies.remove(&name);
             }
+            let mut license = value.license.clone();
+            license.truncate(26);
             data.versions.insert(
                 key,
                 MinimalPackageVersionData {
-                    license: value.license,
+                    license,
                     tarball: value.dist.tarball,
                     dependencies,
                 },
@@ -153,39 +154,109 @@ pub fn get_package(
         .optional()
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone)]
+struct Row {
+    pub key: String,
+    doc: RegistryDocument,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+struct AllDocsPage {
+    total_rows: i64,
+    offset: i64,
+    rows: Vec<Row>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+struct FetchAllQuery {
+    limit: usize,
+    start_key: Option<String>,
+    include_docs: bool,
+    skip: i64,
+}
+
+async fn fetch_all_docs(limit: usize, start_key: Option<String>) -> AllDocsPage {
+    println!("{}, {:?}", limit, start_key);
+    let client = reqwest::Client::new();
+    let query = FetchAllQuery {
+        limit,
+        start_key: match start_key.clone() {
+            None => None,
+            Some(v) => Some(serde_json::to_string(&v).unwrap()),
+        },
+        skip: match start_key {
+            None => 0,
+            Some(_v) => 1,
+        },
+        include_docs: true,
+    };
+    let request = client
+        .get("https://replicate.npmjs.com/registry/_all_docs")
+        .query(&query);
+    println!("{:?}", request);
+    let resp = request
+        .send()
+        .await
+        .unwrap()
+        .json::<AllDocsPage>()
+        .await
+        .unwrap();
+
+    resp
+}
+
 #[tokio::main]
-async fn main() -> CouchResult<()> {
+async fn main() {
     let db_path = "./registry.db3";
     let conn = Connection::open(db_path).unwrap();
     init_db(&conn);
 
-    // Sync using the change stream
-    let client = couch_rs::Client::new_no_auth("https://replicate.npmjs.com")?;
-    let npm_db = client.db("registry").await?;
+    let limit: usize = 10;
+    let mut last_count: usize = limit;
+    let mut start_key: Option<String> = None;
+    while last_count >= limit {
+        let docs = fetch_all_docs(limit, start_key.clone()).await;
 
-    let last_seq: i64 = get_last_seq(&conn);
-    println!("Last synced sequence {}", last_seq);
-    let mut stream = npm_db.changes(Some(last_seq.into()));
-    stream.set_infinite(true);
-
-    while let Some(v) = stream.next().await {
-        if let Ok(change) = v {
-            if let Some(doc) = change.doc {
-                let parsed: RegistryDocument = serde_json::from_value(doc).unwrap();
-
-                if parsed.deleted {
-                    delete_package(&conn, &parsed.id).unwrap();
-                    println!("Deleted package {}", parsed.id);
-                } else {
-                    write_package(&conn, MinimalPackageData::from_doc(parsed.clone())).unwrap();
-                    println!("Wrote package {} to db", parsed.id);
-                }
+        for row in docs.rows.iter() {
+            if row.doc.deleted {
+                delete_package(&conn, &row.doc.id).unwrap();
+                println!("Deleted package {}", row.doc.id);
+            } else {
+                write_package(&conn, MinimalPackageData::from_doc(row.doc.clone())).unwrap();
+                println!("Wrote package {} to db", row.doc.id);
             }
-
-            let last_seq: i64 = serde_json::from_value(change.seq).unwrap();
-            update_last_seq(&conn, last_seq).unwrap();
+            start_key = Some(row.key.clone());
         }
+
+        last_count = docs.rows.len();
     }
 
-    Ok(())
+    // Sync using the change stream
+    // let client = couch_rs::Client::new_no_auth("https://replicate.npmjs.com")?;
+    // let npm_db = client.db("registry").await?;
+
+    // last sequence before fetching 17565206
+    // let last_seq: i64 = get_last_seq(&conn);
+    // println!("Last synced sequence {}", last_seq);
+    // let mut stream = npm_db.changes(Some(last_seq.into()));
+    // stream.set_infinite(true);
+
+    // while let Some(v) = stream.next().await {
+    //     if let Ok(change) = v {
+    //         if let Some(doc) = change.doc {
+    //             let parsed: RegistryDocument = serde_json::from_value(doc).unwrap();
+
+    //             if parsed.deleted {
+    //                 delete_package(&conn, &parsed.id).unwrap();
+    //                 println!("Deleted package {}", parsed.id);
+    //             } else {
+    //                 write_package(&conn, MinimalPackageData::from_doc(parsed.clone())).unwrap();
+    //                 println!("Wrote package {} to db", parsed.id);
+    //             }
+    //         }
+
+    //         let last_seq: i64 = serde_json::from_value(change.seq).unwrap();
+    //         update_last_seq(&conn, last_seq).unwrap();
+    //     }
+    // }
 }
