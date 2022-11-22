@@ -2,8 +2,11 @@ use anyhow::Result;
 use reqwest::Client;
 use rusqlite::{named_params, Connection, OptionalExtension};
 use serde_json::Value;
+use std::{
+    collections::{BTreeMap, HashMap},
+    time::Duration,
+};
 use tokio::time::sleep;
-use std::{collections::{BTreeMap, HashMap}, time::Duration};
 
 use serde::{Deserialize, Serialize};
 
@@ -213,9 +216,7 @@ async fn main() {
     let limit: usize = 100;
     let mut total_rows = limit * 2;
     let mut offset: usize = limit;
-    let mut start_key: Option<Value> = Some(Value::from(
-        "@dsr-user-suber-sawed-rowth-tepal/dsr-package-public-suber-sawed-rowth-tepal",
-    ));
+    let mut start_key: Option<Value> = Some(Value::from("@dune-network/provider"));
 
     while offset < total_rows {
         let mut requests = Vec::new();
@@ -227,8 +228,10 @@ async fn main() {
                 let mut result =
                     fetch_all_docs(&cloned_client, limit, cloned_start_key.clone(), skip).await;
                 while let Err(_err) = result {
+                    println!("Fetch failed, retrying...");
                     sleep(Duration::from_millis(100)).await;
-                    result = fetch_all_docs(&cloned_client, limit, cloned_start_key.clone(), skip).await;
+                    result =
+                        fetch_all_docs(&cloned_client, limit, cloned_start_key.clone(), skip).await;
                 }
                 result
             });
