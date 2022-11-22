@@ -124,6 +124,11 @@ pub fn delete_package(conn: &Connection, name: &str) -> Result<usize, rusqlite::
 }
 
 pub fn write_package(conn: &Connection, pkg: MinimalPackageData) -> Result<usize, rusqlite::Error> {
+    if pkg.versions.len() <= 0 {
+        println!("Tried to write pkg {}, but has no versions", pkg.name);
+        return delete_package(conn, &pkg.name);
+    }
+
     let mut prepared_statement = conn
         .prepare("INSERT OR REPLACE INTO package (id, content) VALUES (:id, :content)")
         .unwrap();
@@ -152,6 +157,7 @@ pub fn get_package(
 async fn main() -> CouchResult<()> {
     let db_path = "./registry.db3";
     let conn = Connection::open(db_path).unwrap();
+    init_db(&conn);
 
     // Sync using the change stream
     let client = couch_rs::Client::new_no_auth("https://replicate.npmjs.com")?;
