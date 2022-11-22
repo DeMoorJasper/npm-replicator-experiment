@@ -169,14 +169,15 @@ struct FetchAllQuery {
     limit: usize,
     start_key: Option<String>,
     include_docs: bool,
-    skip: i64,
+    skip: usize,
 }
 
 async fn fetch_all_docs(
-    client: Client,
+    client: &Client,
     limit: usize,
     start_key: Option<Value>,
-) -> (Client, AllDocsPage) {
+    skip: usize,
+) -> AllDocsPage {
     println!("{}, {:?}", limit, start_key);
     let query = FetchAllQuery {
         limit,
@@ -184,10 +185,7 @@ async fn fetch_all_docs(
             None => None,
             Some(v) => Some(serde_json::to_string(&v).unwrap()),
         },
-        skip: match start_key {
-            None => 0,
-            Some(_v) => 1,
-        },
+        skip,
         include_docs: true,
     };
     let request = client
@@ -196,7 +194,7 @@ async fn fetch_all_docs(
     println!("{:?}", request);
     let resp: String = request.send().await.unwrap().text().await.unwrap();
     let decoded: AllDocsPage = serde_json::from_str(&resp).unwrap();
-    (client, decoded)
+    decoded
 }
 
 #[tokio::main]
@@ -205,33 +203,78 @@ async fn main() {
     let conn = Connection::open(db_path).unwrap();
     init_db(&conn);
 
-    let mut client = reqwest::ClientBuilder::default()
+    let client = reqwest::ClientBuilder::default()
         .gzip(true)
         .build()
         .unwrap();
 
     let limit: usize = 25;
-    let mut last_count: usize = limit;
-    let mut start_key: Option<Value> = Some(Value::from("@ali-i18n-fe/intl-comp-image"));
-    while last_count >= limit {
-        let (new_client, docs) = fetch_all_docs(client, limit, start_key.clone()).await;
+    let mut total_rows = limit * 2;
+    let mut offset: usize = limit;
+    let mut start_key: Option<Value> = Some(Value::from("@bufferapp/publish-utils"));
 
-        for row in docs.rows.iter() {
-            if row.doc.deleted {
-                delete_package(&conn, &row.doc.id).unwrap();
-                println!("Deleted package {}", row.doc.id);
-            } else {
-                write_package(&conn, MinimalPackageData::from_doc(row.doc.clone())).unwrap();
-                println!("Wrote package {} to db", row.doc.id);
-            }
-            start_key = Some(row.key.clone());
+    while offset < total_rows {
+        let mut requests = Vec::new();
+        for i in 0..15 {
+            let skip = i * limit + 1;
+            let cloned_client = client.clone();
+            let cloned_start_key = start_key.clone();
+            let request = tokio::spawn(async move {
+                fetch_all_docs(&cloned_client, limit, cloned_start_key, skip).await
+            });
+            requests.push(request);
         }
 
-        client = new_client;
-        last_count = docs.rows.len();
+        for req in requests {
+            println!("Awaiting response for page...");
+            let page = req.await.unwrap();
 
-        println!("Fetched {} of {} packages", docs.offset, docs.total_rows);
+            println!("Processing page...");
+
+            for row in page.rows {
+                if row.doc.deleted {
+                    delete_package(&conn, &row.doc.id).unwrap();
+                    println!("Deleted package {}", row.doc.id);
+                } else {
+                    write_package(&conn, MinimalPackageData::from_doc(row.doc.clone())).unwrap();
+                    println!("Wrote package {} to db", row.doc.id);
+                }
+
+                start_key = Some(row.key.clone());
+            }
+
+            offset = page.offset as usize;
+            total_rows = page.total_rows as usize;
+
+            println!("Processed page");
+        }
+
+        println!("Fetched {} of {} packages", offset, total_rows);
     }
+
+    // let limit: usize = 25;
+    // let mut total_rows = limit * 2;
+    // let mut offset: usize = limit;
+    // let mut start_key: Option<Value> = Some(Value::from("@ali-i18n-fe/intl-comp-image"));
+    // while offset < total_rows {
+    //     let docs = fetch_all_docs(&client, limit, start_key.clone()).await;
+
+    //     for row in docs.rows.iter() {
+    //         if row.doc.deleted {
+    //             delete_package(&conn, &row.doc.id).unwrap();
+    //             println!("Deleted package {}", row.doc.id);
+    //         } else {
+    //             write_package(&conn, MinimalPackageData::from_doc(row.doc.clone())).unwrap();
+    //             println!("Wrote package {} to db", row.doc.id);
+    //         }
+    //         start_key = Some(row.key.clone());
+    //     }
+
+    //     offset = docs.offset as usize;
+    //     total_rows = docs.total_rows as usize;
+
+    //     println!("Fetched {} of {} packages", docs.offset, docs.total_rows);
+    // }
 
     // Sync using the change stream
     // let client = couch_rs::Client::new_no_auth("https://replicate.npmjs.com")?;
