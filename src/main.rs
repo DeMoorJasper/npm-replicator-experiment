@@ -220,14 +220,15 @@ async fn main() {
 
     while offset < total_rows {
         let mut requests = Vec::new();
-        for i in 0..15 {
+        for i in 0..10 {
             let skip = i * limit + 1;
             let cloned_client = client.clone();
             let cloned_start_key = start_key.clone();
             let request = tokio::spawn(async move {
                 let mut result =
                     fetch_all_docs(&cloned_client, limit, cloned_start_key.clone(), skip).await;
-                while let Err(_err) = result {
+                while let Err(err) = result {
+                    println!("{:?}", err);
                     println!("Fetch failed, retrying in 100ms...");
                     sleep(Duration::from_millis(100)).await;
                     println!("Retrying fetch...");
