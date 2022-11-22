@@ -212,7 +212,7 @@ async fn main() {
 
     let limit: usize = 25;
     let mut last_count: usize = limit;
-    let mut start_key: Option<Value> = Some(Value::from("1806a--onetwo"));
+    let mut start_key: Option<Value> = Some(Value::from("@ali-i18n-fe/intl-comp-image"));
     while last_count >= limit {
         let (new_client, docs) = fetch_all_docs(client, limit, start_key.clone()).await;
 
