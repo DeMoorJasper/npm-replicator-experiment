@@ -13,8 +13,6 @@ pub struct DocumentPackageDist {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct DocumentPackageVersion {
     #[serde(default)]
-    license: String,
-    #[serde(default)]
     dependencies: HashMap<String, String>,
     #[serde(default, rename = "optionalDependencies")]
     optional_dependencies: HashMap<String, String>,
@@ -41,7 +39,6 @@ pub struct RegistryDocument {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct MinimalPackageVersionData {
     pub tarball: String,
-    pub license: String,
     pub dependencies: HashMap<String, String>,
 }
 
@@ -64,12 +61,9 @@ impl MinimalPackageData {
             for (name, _version) in value.optional_dependencies {
                 dependencies.remove(&name);
             }
-            let mut license = value.license.clone();
-            license.truncate(26);
             data.versions.insert(
                 key,
                 MinimalPackageVersionData {
-                    license,
                     tarball: value.dist.tarball,
                     dependencies,
                 },
@@ -216,9 +210,9 @@ async fn main() {
         .build()
         .unwrap();
 
-    let limit: usize = 10;
+    let limit: usize = 25;
     let mut last_count: usize = limit;
-    let mut start_key: Option<Value> = Some(Value::from("12env"));
+    let mut start_key: Option<Value> = Some(Value::from("1806a--onetwo"));
     while last_count >= limit {
         let (new_client, docs) = fetch_all_docs(client, limit, start_key.clone()).await;
 
