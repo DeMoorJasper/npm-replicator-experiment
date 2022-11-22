@@ -216,11 +216,11 @@ async fn main() {
     let limit: usize = 100;
     let mut total_rows = limit * 2;
     let mut offset: usize = limit;
-    let mut start_key: Option<Value> = Some(Value::from("@dwlib/event-emitter"));
+    let mut start_key: Option<Value> = Some(Value::from("@dxos/cli-core"));
 
     while offset < total_rows {
         let mut requests = Vec::new();
-        for i in 0..10 {
+        for i in 0..50 {
             let skip = i * limit + 1;
             let cloned_client = client.clone();
             let cloned_start_key = start_key.clone();
