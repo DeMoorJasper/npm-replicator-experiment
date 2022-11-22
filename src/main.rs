@@ -1,7 +1,9 @@
+use anyhow::Result;
 use reqwest::Client;
 use rusqlite::{named_params, Connection, OptionalExtension};
 use serde_json::Value;
-use std::collections::{BTreeMap, HashMap};
+use tokio::time::sleep;
+use std::{collections::{BTreeMap, HashMap}, time::Duration};
 
 use serde::{Deserialize, Serialize};
 
@@ -177,13 +179,13 @@ async fn fetch_all_docs(
     limit: usize,
     start_key: Option<Value>,
     skip: usize,
-) -> AllDocsPage {
+) -> Result<AllDocsPage> {
     println!("{}, {:?}", limit, start_key);
     let query = FetchAllQuery {
         limit,
         start_key: match start_key.clone() {
             None => None,
-            Some(v) => Some(serde_json::to_string(&v).unwrap()),
+            Some(v) => Some(serde_json::to_string(&v)?),
         },
         skip,
         include_docs: true,
@@ -192,9 +194,9 @@ async fn fetch_all_docs(
         .get("https://replicate.npmjs.com/registry/_all_docs")
         .query(&query);
     println!("{:?}", request);
-    let resp: String = request.send().await.unwrap().text().await.unwrap();
-    let decoded: AllDocsPage = serde_json::from_str(&resp).unwrap();
-    decoded
+    let resp: String = request.send().await?.text().await?;
+    let decoded: AllDocsPage = serde_json::from_str(&resp)?;
+    Ok(decoded)
 }
 
 #[tokio::main]
@@ -211,23 +213,31 @@ async fn main() {
     let limit: usize = 100;
     let mut total_rows = limit * 2;
     let mut offset: usize = limit;
-    let mut start_key: Option<Value> = Some(Value::from("@c0b41/webshot"));
+    let mut start_key: Option<Value> = Some(Value::from(
+        "@dsr-user-suber-sawed-rowth-tepal/dsr-package-public-suber-sawed-rowth-tepal",
+    ));
 
     while offset < total_rows {
         let mut requests = Vec::new();
-        for i in 0..15 {
+        for i in 0..10 {
             let skip = i * limit + 1;
             let cloned_client = client.clone();
             let cloned_start_key = start_key.clone();
             let request = tokio::spawn(async move {
-                fetch_all_docs(&cloned_client, limit, cloned_start_key, skip).await
+                let mut result =
+                    fetch_all_docs(&cloned_client, limit, cloned_start_key.clone(), skip).await;
+                while let Err(_err) = result {
+                    sleep(Duration::from_millis(100)).await;
+                    result = fetch_all_docs(&cloned_client, limit, cloned_start_key.clone(), skip).await;
+                }
+                result
             });
             requests.push(request);
         }
 
         for req in requests {
             println!("Awaiting response for page...");
-            let page = req.await.unwrap();
+            let page = req.await.unwrap().unwrap();
 
             println!("Processing page...");
 
