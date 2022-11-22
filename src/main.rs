@@ -1,3 +1,4 @@
+use reqwest::Client;
 use rusqlite::{named_params, Connection, OptionalExtension};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
@@ -29,10 +30,12 @@ pub struct RegistryDocument {
     #[serde(rename = "_deleted")]
     deleted: bool,
 
+    #[serde(default)]
     #[serde(rename = "dist-tags")]
-    dist_tags: Option<HashMap<String, String>>,
+    dist_tags: HashMap<String, String>,
 
-    versions: Option<BTreeMap<String, DocumentPackageVersion>>,
+    #[serde(default)]
+    versions: BTreeMap<String, DocumentPackageVersion>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -53,10 +56,10 @@ impl MinimalPackageData {
     pub fn from_doc(raw: RegistryDocument) -> MinimalPackageData {
         let mut data = MinimalPackageData {
             name: raw.id,
-            dist_tags: raw.dist_tags.unwrap_or(HashMap::new()),
+            dist_tags: raw.dist_tags,
             versions: BTreeMap::new(),
         };
-        for (key, value) in raw.versions.unwrap_or(BTreeMap::new()) {
+        for (key, value) in raw.versions {
             let mut dependencies = value.dependencies;
             for (name, _version) in value.optional_dependencies {
                 dependencies.remove(&name);
@@ -156,7 +159,7 @@ pub fn get_package(
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 struct Row {
-    pub key: String,
+    pub key: Value,
     doc: RegistryDocument,
 }
 
@@ -175,9 +178,12 @@ struct FetchAllQuery {
     skip: i64,
 }
 
-async fn fetch_all_docs(limit: usize, start_key: Option<String>) -> AllDocsPage {
+async fn fetch_all_docs(
+    client: Client,
+    limit: usize,
+    start_key: Option<Value>,
+) -> (Client, AllDocsPage) {
     println!("{}, {:?}", limit, start_key);
-    let client = reqwest::Client::new();
     let query = FetchAllQuery {
         limit,
         start_key: match start_key.clone() {
@@ -194,15 +200,9 @@ async fn fetch_all_docs(limit: usize, start_key: Option<String>) -> AllDocsPage 
         .get("https://replicate.npmjs.com/registry/_all_docs")
         .query(&query);
     println!("{:?}", request);
-    let resp = request
-        .send()
-        .await
-        .unwrap()
-        .json::<AllDocsPage>()
-        .await
-        .unwrap();
-
-    resp
+    let resp: String = request.send().await.unwrap().text().await.unwrap();
+    let decoded: AllDocsPage = serde_json::from_str(&resp).unwrap();
+    (client, decoded)
 }
 
 #[tokio::main]
@@ -211,11 +211,16 @@ async fn main() {
     let conn = Connection::open(db_path).unwrap();
     init_db(&conn);
 
+    let mut client = reqwest::ClientBuilder::default()
+        .gzip(true)
+        .build()
+        .unwrap();
+
     let limit: usize = 10;
     let mut last_count: usize = limit;
-    let mut start_key: Option<String> = None;
+    let mut start_key: Option<Value> = Some(Value::from("12env"));
     while last_count >= limit {
-        let docs = fetch_all_docs(limit, start_key.clone()).await;
+        let (new_client, docs) = fetch_all_docs(client, limit, start_key.clone()).await;
 
         for row in docs.rows.iter() {
             if row.doc.deleted {
@@ -228,7 +233,10 @@ async fn main() {
             start_key = Some(row.key.clone());
         }
 
+        client = new_client;
         last_count = docs.rows.len();
+
+        println!("Fetched {} of {} packages", docs.offset, docs.total_rows);
     }
 
     // Sync using the change stream
