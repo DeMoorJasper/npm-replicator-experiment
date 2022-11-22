@@ -220,7 +220,7 @@ async fn main() {
 
     while offset < total_rows {
         let mut requests = Vec::new();
-        for i in 0..50 {
+        for i in 0..15 {
             let skip = i * limit + 1;
             let cloned_client = client.clone();
             let cloned_start_key = start_key.clone();
