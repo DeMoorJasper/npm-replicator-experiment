@@ -134,6 +134,7 @@ async fn fetch_all_docs(
     Ok(decoded)
 }
 
+// last sequence before fetching 17565206
 #[tokio::main]
 async fn main() {
     let db_path = "./registry.db3";
@@ -145,14 +146,14 @@ async fn main() {
         .build()
         .unwrap();
 
-    let limit: usize = 100;
+    let limit: usize = 2;
     let mut total_rows = limit * 2;
     let mut offset: usize = limit;
-    let mut start_key: Option<Value> = Some(Value::from("@shaycryptocoin/shaycryptocoin-js"));
+    let mut start_key: Option<Value> = Some(Value::from("drcd-antd-ui"));
 
     while offset < total_rows {
         let mut requests = Vec::new();
-        for i in 0..10 {
+        for i in 0..1 {
             let skip = i * limit + 1;
             let cloned_client = client.clone();
             let cloned_start_key = start_key.clone();
@@ -197,33 +198,4 @@ async fn main() {
             println!("Fetched {} of {} packages", offset, total_rows);
         }
     }
-
-    // Sync using the change stream
-    // let client = couch_rs::Client::new_no_auth("https://replicate.npmjs.com")?;
-    // let npm_db = client.db("registry").await?;
-
-    // last sequence before fetching 17565206
-    // let last_seq: i64 = get_last_seq(&conn);
-    // println!("Last synced sequence {}", last_seq);
-    // let mut stream = npm_db.changes(Some(last_seq.into()));
-    // stream.set_infinite(true);
-
-    // while let Some(v) = stream.next().await {
-    //     if let Ok(change) = v {
-    //         if let Some(doc) = change.doc {
-    //             let parsed: RegistryDocument = serde_json::from_value(doc).unwrap();
-
-    //             if parsed.deleted {
-    //                 delete_package(&conn, &parsed.id).unwrap();
-    //                 println!("Deleted package {}", parsed.id);
-    //             } else {
-    //                 write_package(&conn, MinimalPackageData::from_doc(parsed.clone())).unwrap();
-    //                 println!("Wrote package {} to db", parsed.id);
-    //             }
-    //         }
-
-    //         let last_seq: i64 = serde_json::from_value(change.seq).unwrap();
-    //         update_last_seq(&conn, last_seq).unwrap();
-    //     }
-    // }
 }
