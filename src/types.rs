@@ -10,9 +10,10 @@ pub struct DocumentPackageDist {
 #[serde_as]
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct DocumentPackageVersion {
+    #[serde(default)]
     #[serde_as(deserialize_as = "DefaultOnError")]
     pub dependencies: Option<HashMap<String, String>>,
-    #[serde(rename = "optionalDependencies")]
+    #[serde(default, rename = "optionalDependencies")]
     #[serde_as(deserialize_as = "DefaultOnError")]
     pub optional_dependencies: Option<HashMap<String, String>>,
     pub dist: DocumentPackageDist,
