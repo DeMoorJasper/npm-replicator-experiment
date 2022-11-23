@@ -17,10 +17,9 @@ pub struct DocumentPackageDist {
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct DocumentPackageVersion {
-    #[serde(default)]
-    dependencies: HashMap<String, String>,
-    #[serde(default, rename = "optionalDependencies")]
-    optional_dependencies: HashMap<String, String>,
+    dependencies: Option<HashMap<String, String>>,
+    #[serde(rename = "optionalDependencies")]
+    optional_dependencies: Option<HashMap<String, String>>,
     dist: DocumentPackageDist,
 }
 
@@ -29,16 +28,13 @@ pub struct RegistryDocument {
     #[serde(rename = "_id")]
     id: String,
 
-    #[serde(default)]
     #[serde(rename = "_deleted")]
     deleted: bool,
-
-    #[serde(default)]
+    
     #[serde(rename = "dist-tags")]
-    dist_tags: HashMap<String, String>,
-
-    #[serde(default)]
-    versions: BTreeMap<String, DocumentPackageVersion>,
+    dist_tags: Option<HashMap<String, String>>,
+    
+    versions: Option<BTreeMap<String, DocumentPackageVersion>>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -58,12 +54,12 @@ impl MinimalPackageData {
     pub fn from_doc(raw: RegistryDocument) -> MinimalPackageData {
         let mut data = MinimalPackageData {
             name: raw.id,
-            dist_tags: raw.dist_tags,
+            dist_tags: raw.dist_tags.unwrap_or(HashMap::new()),
             versions: BTreeMap::new(),
         };
-        for (key, value) in raw.versions {
-            let mut dependencies = value.dependencies;
-            for (name, _version) in value.optional_dependencies {
+        for (key, value) in raw.versions.unwrap_or(BTreeMap::new()) {
+            let mut dependencies = value.dependencies.unwrap_or(HashMap::new());
+            for (name, _version) in value.optional_dependencies.unwrap_or(HashMap::new()) {
                 dependencies.remove(&name);
             }
             data.versions.insert(
@@ -213,10 +209,10 @@ async fn main() {
         .build()
         .unwrap();
 
-    let limit: usize = 250;
+    let limit: usize = 125;
     let mut total_rows = limit * 2;
     let mut offset: usize = limit;
-    let mut start_key: Option<Value> = Some(Value::from("@eqela/slingdev"));
+    let mut start_key: Option<Value> = Some(Value::from("@sfotty-pie/sfotty"));
 
     while offset < total_rows {
         let mut requests = Vec::new();
@@ -262,9 +258,8 @@ async fn main() {
             total_rows = page.total_rows as usize;
 
             println!("Processed page");
+            println!("Fetched {} of {} packages", offset, total_rows);
         }
-
-        println!("Fetched {} of {} packages", offset, total_rows);
     }
 
     // let limit: usize = 25;
