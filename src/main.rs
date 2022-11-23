@@ -28,7 +28,7 @@ pub struct RegistryDocument {
     #[serde(rename = "_id")]
     id: String,
 
-    #[serde(rename = "_deleted")]
+    #[serde(default, rename = "_deleted")]
     deleted: bool,
     
     #[serde(rename = "dist-tags")]
@@ -209,10 +209,10 @@ async fn main() {
         .build()
         .unwrap();
 
-    let limit: usize = 125;
+    let limit: usize = 100;
     let mut total_rows = limit * 2;
     let mut offset: usize = limit;
-    let mut start_key: Option<Value> = Some(Value::from("@sfotty-pie/sfotty"));
+    let mut start_key: Option<Value> = Some(Value::from("@shaycryptocoin/shaycryptocoin-js"));
 
     while offset < total_rows {
         let mut requests = Vec::new();
@@ -225,8 +225,8 @@ async fn main() {
                     fetch_all_docs(&cloned_client, limit, cloned_start_key.clone(), skip).await;
                 while let Err(err) = result {
                     println!("{:?}", err);
-                    println!("Fetch failed, retrying in 100ms...");
-                    sleep(Duration::from_millis(100)).await;
+                    println!("Fetch failed, retrying in 250ms...");
+                    sleep(Duration::from_millis(250)).await;
                     println!("Retrying fetch...");
                     result =
                         fetch_all_docs(&cloned_client, limit, cloned_start_key.clone(), skip).await;
