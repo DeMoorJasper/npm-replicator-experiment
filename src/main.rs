@@ -2,77 +2,13 @@ use anyhow::Result;
 use reqwest::Client;
 use rusqlite::{named_params, Connection, OptionalExtension};
 use serde_json::Value;
-use std::{
-    collections::{BTreeMap, HashMap},
-    time::Duration,
-};
+use std::time::Duration;
 use tokio::time::sleep;
 
+use crate::types::{MinimalPackageData, RegistryDocument};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct DocumentPackageDist {
-    tarball: String,
-}
-
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct DocumentPackageVersion {
-    dependencies: Option<HashMap<String, String>>,
-    #[serde(rename = "optionalDependencies")]
-    optional_dependencies: Option<HashMap<String, String>>,
-    dist: DocumentPackageDist,
-}
-
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct RegistryDocument {
-    #[serde(rename = "_id")]
-    id: String,
-
-    #[serde(default, rename = "_deleted")]
-    deleted: bool,
-    
-    #[serde(rename = "dist-tags")]
-    dist_tags: Option<HashMap<String, String>>,
-    
-    versions: Option<BTreeMap<String, DocumentPackageVersion>>,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct MinimalPackageVersionData {
-    pub tarball: String,
-    pub dependencies: HashMap<String, String>,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct MinimalPackageData {
-    pub name: String,
-    pub dist_tags: HashMap<String, String>,
-    pub versions: BTreeMap<String, MinimalPackageVersionData>,
-}
-
-impl MinimalPackageData {
-    pub fn from_doc(raw: RegistryDocument) -> MinimalPackageData {
-        let mut data = MinimalPackageData {
-            name: raw.id,
-            dist_tags: raw.dist_tags.unwrap_or(HashMap::new()),
-            versions: BTreeMap::new(),
-        };
-        for (key, value) in raw.versions.unwrap_or(BTreeMap::new()) {
-            let mut dependencies = value.dependencies.unwrap_or(HashMap::new());
-            for (name, _version) in value.optional_dependencies.unwrap_or(HashMap::new()) {
-                dependencies.remove(&name);
-            }
-            data.versions.insert(
-                key,
-                MinimalPackageVersionData {
-                    tarball: value.dist.tarball,
-                    dependencies,
-                },
-            );
-        }
-        data
-    }
-}
+mod types;
 
 pub fn init_db(conn: &Connection) {
     conn.execute(
@@ -261,30 +197,6 @@ async fn main() {
             println!("Fetched {} of {} packages", offset, total_rows);
         }
     }
-
-    // let limit: usize = 25;
-    // let mut total_rows = limit * 2;
-    // let mut offset: usize = limit;
-    // let mut start_key: Option<Value> = Some(Value::from("@ali-i18n-fe/intl-comp-image"));
-    // while offset < total_rows {
-    //     let docs = fetch_all_docs(&client, limit, start_key.clone()).await;
-
-    //     for row in docs.rows.iter() {
-    //         if row.doc.deleted {
-    //             delete_package(&conn, &row.doc.id).unwrap();
-    //             println!("Deleted package {}", row.doc.id);
-    //         } else {
-    //             write_package(&conn, MinimalPackageData::from_doc(row.doc.clone())).unwrap();
-    //             println!("Wrote package {} to db", row.doc.id);
-    //         }
-    //         start_key = Some(row.key.clone());
-    //     }
-
-    //     offset = docs.offset as usize;
-    //     total_rows = docs.total_rows as usize;
-
-    //     println!("Fetched {} of {} packages", docs.offset, docs.total_rows);
-    // }
 
     // Sync using the change stream
     // let client = couch_rs::Client::new_no_auth("https://replicate.npmjs.com")?;
